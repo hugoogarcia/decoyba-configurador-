@@ -239,10 +239,9 @@ with st.sidebar:
     margen_pct = st.slider("Margen Objetivo", 20, 60, 40, 5, format="%d%%")
     bus_sources = st.multiselect("Fuentes", ["Cemevisa", "Gocisa"], default=["Cemevisa", "Gocisa"])
 
-# ── Search Interface ──────────────────────────────────────────────────────────
 # ── Search Interface (Command Center) ─────────────────────────────────────────
 st.markdown('<div class="search-container-v2">', unsafe_allow_html=True)
-query_input = st.text_input("Búsqueda de productos", placeholder="Ej: lavadora bosch, horno balay, frigorífico...", label_visibility="collapsed")
+query_input = st.text_input("Búsqueda de productos", placeholder="Ej: lavadora bosch 7kg, lavavajillas barata, horno pirolitico...", label_visibility="collapsed")
 buscar = st.button("BUSCAR", use_container_width=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -251,42 +250,39 @@ if "search_trigger" in st.session_state:
     buscar = True
 
 def filter_and_rank(results, params):
-    """Lógica de ranking inteligente v3."""
-    # 1. Filtro estricto de accesorios y repuestos
-    keywords = [
-        "ACCESORIO", "ACCESOR", "BANDEJA", "REPUESTO", "KIT", "SOPORTE", "PAE", "LIMPIADOR",
-        "TUBO", "CESTO", "MANGUERA", "DESAGUE", "EVACUACION", "CABLE", "MOTOR", "REJILLA", 
-        "FILTRO", "TAPA", "BISAGRA", "GUIAS", "GUIA", "BOMBILLA", "LAMPARA", "UNION"
+    """Filtrado inteligente v4: elimina accesorios y repuestos, prioriza por contexto."""
+    
+    KEYWORDS_ACCESORIO = [
+        "ACCESORIO", "ACCESOR", "BANDEJA", "REPUESTO", "KIT ", "SOPORTE",
+        "LIMPIADOR", "LIMPIA", "TUBO", "CESTO", "MANGUERA", "DESAGUE",
+        "EVACUACION", "CABLE", "REJILLA", "FILTRO", "TAPA", "BISAGRA",
+        "GUIAS", "GUIA ", "BOMBILLA", "LAMPARA", "UNION", "CONECTOR",
+        "PAE ", "GRILL", "BANDEJ", "ESTANTE", "REJA ", "PROTECTOR",
+        "DISPENSADOR", "VARILLA", "GANCHO", "SELLO", "JUNTA",
     ]
     
     clean_list = []
     for r in results:
         nombre_upper = r["Nombre"].upper()
-        # Rechazar si contiene palabras clave de accesorio
-        if any(k in nombre_upper for k in keywords):
+        if any(k in nombre_upper for k in KEYWORDS_ACCESORIO):
             continue
-            
-        # Rechazar si el coste es irremediablemente bajo para ser un electrodoméstico principal (<45€)
-        # (Todos los productos del configurador son gama blanca: hornos, frigos, lavadoras, etc.)
-        if r["Coste €"] < 45.0:
+        if r["Coste €"] < 40.0:
             continue
-            
         clean_list.append(r)
     
-    # Si la limpieza es tan agresiva que vacía la lista, devolvemos los resultados originales por si acaso
-    if not clean_list: 
+    if not clean_list:
+        clean_list = [r for r in results if r["Coste €"] >= 20.0]
+    if not clean_list:
         clean_list = results
-    
-    # 2. Ranking dinámico
+
     if params.get("barato"):
-        # Priorizar coste bajo (pero ya limpios de accesorios basura)
         return sorted(clean_list, key=lambda x: x["Coste €"])
     elif params.get("premium"):
-        # Priorizar marcas top y beneficio absoluto
-        top_maras = ["SIEMENS", "BOSCH", "NEFF", "AEG"]
-        return sorted(clean_list, key=lambda x: (any(m in x["Nombre"].upper() for m in top_maras), x["Beneficio €"]), reverse=True)
+        top_marcas = ["SIEMENS", "BOSCH", "NEFF", "AEG", "SMEG"]
+        return sorted(clean_list,
+                      key=lambda x: (any(m in x["Nombre"].upper() for m in top_marcas), x["Beneficio €"]),
+                      reverse=True)
     else:
-        # Default: máximo beneficio
         return sorted(clean_list, key=lambda x: x["Beneficio €"], reverse=True)
 
 if buscar and query_input:
@@ -313,9 +309,13 @@ if buscar and query_input:
 
     tasks = []
     if "Cemevisa" in bus_sources:
-        tasks.append(fetch_safe(buscar_cemevisa, creds["cem"][0], creds["cem"][1], params["familia"], params.get("marca"), params.get("palabra", ""), params["margen"], 1, True))
+        tasks.append(fetch_safe(buscar_cemevisa, creds["cem"][0], creds["cem"][1],
+                                params["familia"], params.get("marca"), params.get("palabra", ""),
+                                params["margen"], 2, True))
     if "Gocisa" in bus_sources:
-        tasks.append(fetch_safe(buscar_gocisa, creds["goc"][0], creds["goc"][1], params["familia"], params.get("marca"), params.get("palabra", ""), params["margen"], 1, True))
+        tasks.append(fetch_safe(buscar_gocisa, creds["goc"][0], creds["goc"][1],
+                                params["familia"], params.get("marca"), params.get("palabra", ""),
+                                params["margen"], 2, True))
 
     raw_results = [p for sublist in asyncio.run(asyncio.gather(*tasks)) for p in sublist]
     
@@ -376,12 +376,15 @@ if buscar and query_input:
         cols = st.columns(3)
         for i, item in enumerate(alternatives[:6]):
             with cols[i % 3]:
+                desc_item = item.get('Descripcion', '')
+                desc_card_html = f'<p style="font-size:0.82rem; color:var(--text-muted); margin:0.3rem 0 0.6rem 0; min-height:2.5em; line-height:1.4;">{desc_item}</p>' if desc_item else '<p style="min-height:2.5em;"></p>'
                 st.markdown(f"""<div class="glass-card" style="margin-bottom:2rem; display:flex; flex-direction:column; height: 100%;">
 <div class="img-container">
 <img src="{item.get('Imagen') or ''}" style="max-height:100%; max-width:100%; object-fit: contain;">
 </div>
 <div class="price-sub">{item['Fuente']}</div>
-<h4 style="font-size:1.1rem; margin:0.5rem 0; flex-grow: 1;">{item['Nombre']}</h4>
+<h4 style="font-size:1.05rem; margin:0.5rem 0 0 0;">{item['Nombre']}</h4>
+{desc_card_html}
 <div style="margin-top:auto;">
 <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.2rem;">Coste neto: <b>{item['Coste €']:.2f} €</b></div>
 <div class="price-main" style="font-size:2rem !important;">{item['PVP €']:.2f} €</div>
