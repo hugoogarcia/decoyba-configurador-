@@ -31,9 +31,14 @@ st.set_page_config(
 # ── Instalación de Playwright (solo en Streamlit Cloud) ────────────────────────
 if "STREAMLIT_SERVER_ADDRESS" in os.environ:
     browser_path = os.path.expanduser("~/.cache/ms-playwright")
-    if not os.path.exists(browser_path):
-        with st.spinner("📦 Configurando motores de búsqueda..."):
-            subprocess.run(["playwright", "install", "chromium"], check=True)
+    # Limpieza proactiva si la carpeta existe pero está vacía o incompleta
+    if not os.path.exists(browser_path) or len(os.listdir(browser_path)) == 0:
+        with st.spinner("📦 Instalando motores de búsqueda (esto solo ocurre una vez)..."):
+            try:
+                subprocess.run(["playwright", "install", "chromium"], check=True)
+            except Exception as e:
+                st.error(f"Error crítico instalando Playwright: {e}")
+                st.stop()
 
 # ── Inicializar Estado de Sesión ────────────────────────────────────────────────
 if "history" not in st.session_state:
