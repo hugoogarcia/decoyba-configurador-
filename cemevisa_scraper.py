@@ -1,60 +1,17 @@
 """
-cemevisa_scraper.py — Scraper para catálogo Cemevisa
-Versión Requests+BeautifulSoup v2 — URLs con filtros reales
+cemevisa_scraper.py — Scraper para catálogo Cemevisa v3
+URLs verificadas directamente del DOM (todas las categorías, marcas y subfamilias).
 
-Estructura de URLs Cemevisa (verificada en DOM):
-  /es/todo/todo/f-{FAMILIA}-0-{OFFSET}/c-{PALABRA}------{MARCA}---/
-  
-Filtro por texto: se añade segmento _te-{texto}/ al final
-Filtro por marca: se añade segmento _ma-{marca_code},{marca_slug}/ al final
+Estructura de URL: /es/{categoria}/{subcategoria}/f-{FAMILIA}-{SUBFAMILIA}/
+Filtro por marca: añadir /c------{MARCA_CODE}-----/ al final
+Filtro por texto: añadir /c-{TEXTO}------{MARCA_CODE}---/ al final
+Paginación: f-{FAMILIA}-{SUBFAMILIA}-{OFFSET}/ (offset += 20 por página)
 """
 
 from __future__ import annotations
 import re
 import requests
 from bs4 import BeautifulSoup
-
-# ── Códigos de familia (verificados en JS de Cemevisa) ─────────────────────────
-FAMILIAS = {
-    "hornos":         "000009",
-    "horno":          "000009",
-    "frio":           "frio",
-    "nevera":         "frio",
-    "frigorifico":    "frio",
-    "congelador":     "frio",
-    "lavadora":       "000002",
-    "lavadoras":      "000002",
-    "lavado":         "000002",
-    "lavavajillas":   "000003",
-    "placas":         "placas",
-    "placa":          "placas",
-    "campana":        "000007",
-    "campanas":       "000007",
-    "microondas":     "001425",
-    "microonda":      "001425",
-    "secadora":       "000002",
-    "secadoras":      "000002",
-    "horno_compacto": "000009",
-}
-
-# ── Códigos de marca (código_cemevisa, slug) ───────────────────────────────────
-MARCAS = {
-    "balay":      ("bsh49", "balay"),
-    "bosch":      ("bshb2", "bosch"),
-    "siemens":    ("bshs3", "siemens"),
-    "aeg":        ("ge39",  "aeg"),
-    "electrolux": ("ge08",  "electrolux"),
-    "cata":       ("cna38", "cata"),
-    "teka":       ("tek11", "teka"),
-    "beko":       ("bek01", "beko"),
-    "hisense":    ("his01", "hisense"),
-    "samsung":    ("sam01", "samsung"),
-    "lg":         ("lg001", "lg"),
-    "whirlpool":  ("whi01", "whirlpool"),
-    "neff":       ("bshn1", "neff"),
-    "candy":      ("can01", "candy"),
-    "edesa":      ("ede01", "edesa"),
-}
 
 BASE_URL = "https://www.cemevisa.com"
 
@@ -64,29 +21,109 @@ HEADERS = {
     "Accept-Language": "es-ES,es;q=0.9",
 }
 
+# ── URLs de categorías verificadas ─────────────────────────────────────────────
+# Formato: "familia" -> lista de (url_path, subfamilia_code)
+# Se prueban en orden y se usan todas las que devuelvan productos
+CATEGORIAS_URL = {
+    "hornos": [
+        ("/es/hornos/hornos-alto-60-cm/f-000009-0009i/", "hornos-libres-60cm"),
+        ("/es/hornos/hornos-alto-45-cm/f-000009-0009i45/", "hornos-45cm"),
+        ("/es/hornos/hornos-polivalentes-alto-60-cm/f-000009-0009p/", "hornos-polivalentes"),
+    ],
+    "horno": [
+        ("/es/hornos/hornos-alto-60-cm/f-000009-0009i/", "hornos-60cm"),
+        ("/es/hornos/hornos-polivalentes-alto-60-cm/f-000009-0009p/", "hornos-polivalentes"),
+    ],
+    "horno_compacto": [
+        ("/es/hornos/hornos-alto-45-cm/f-000009-0009i45/", "hornos-45cm"),
+    ],
+    "frio": [
+        ("/es/frio/combi/f-frio-0000c/", "frio-combi"),
+        ("/es/frio/americanos-side-by-side/f-frio-fsideby/", "frio-sbs"),
+        ("/es/frio/americanos-puerta-francesa/f-frio-fpfrances/", "frio-francesa"),
+        ("/es/frio/frigorificos-2-puertas/f-frio-00002p/", "frio-2p"),
+        ("/es/frio/frigorificos-1-puerta/f-frio-00001p/", "frio-1p"),
+    ],
+    "nevera": [
+        ("/es/frio/combi/f-frio-0000c/", "frio-combi"),
+        ("/es/frio/frigorificos-2-puertas/f-frio-00002p/", "frio-2p"),
+    ],
+    "frigorifico": [
+        ("/es/frio/combi/f-frio-0000c/", "frio-combi"),
+        ("/es/frio/frigorificos-2-puertas/f-frio-00002p/", "frio-2p"),
+    ],
+    "congelador": [
+        ("/es/frio/congeladores-verticales/f-frio-0000cv/", "congeladores"),
+        ("/es/frio/arcones-congeladores/f-frio-0000a/", "arcones"),
+    ],
+    "lavadora": [
+        ("/es/lavado-y-secado/lavadoras-libre-instalacion/f-000002-0002/", "lavadoras-libres"),
+        ("/es/lavado-y-secado/lavadoras-integrables/f-000002-lavaint/", "lavadoras-int"),
+    ],
+    "lavadoras": [
+        ("/es/lavado-y-secado/lavadoras-libre-instalacion/f-000002-0002/", "lavadoras-libres"),
+    ],
+    "lavavajillas": [
+        ("/es/lavavajillas/lavavajillas-60-cm-libre-instalacion/f-000003-000360/", "lvj-60cm"),
+        ("/es/lavavajillas/lavavajillas-45-cm-libre-instalacion/f-000003-000345/", "lvj-45cm"),
+        ("/es/lavavajillas/lavavajillas-60-cm-integrables/f-000003-60int/", "lvj-60cm-int"),
+        ("/es/lavavajillas/lavavajillas-45-cm-integrables/f-000003-45int/", "lvj-45cm-int"),
+    ],
+    "placas": [
+        ("/es/placas/induccion/f-placas-induc/", "placas-induccion"),
+        ("/es/placas/vitroceramica/f-placas-vitro/", "placas-vitro"),
+        ("/es/placas/gas/f-placas-gas/", "placas-gas"),
+        ("/es/placas/mixtas/f-placas-mixta/", "placas-mixtas"),
+    ],
+    "placa": [
+        ("/es/placas/induccion/f-placas-induc/", "placas-induccion"),
+        ("/es/placas/vitroceramica/f-placas-vitro/", "placas-vitro"),
+    ],
+    "campana": [
+        ("/es/campanas/campanas-decorativas-pared/f-000007-0007chp/", "campanas-pared"),
+        ("/es/campanas/campanas-decorativas-isla/f-000007-0007chi/", "campanas-isla"),
+        ("/es/campanas/campanas-extraplanas/f-000007-0007cex/", "campanas-extrapl"),
+        ("/es/campanas/campanas-integradas/f-000007-0007ci/", "campanas-int"),
+    ],
+    "campanas": [
+        ("/es/campanas/campanas-decorativas-pared/f-000007-0007chp/", "campanas-pared"),
+        ("/es/campanas/campanas-extraplanas/f-000007-0007cex/", "campanas-extrapl"),
+    ],
+    "microondas": [
+        ("/es/microondas/microondas-libre-instalacion/f-001425-libre/", "microondas-libres"),
+        ("/es/microondas/microondas-integrable/f-001425-inte/", "microondas-int"),
+    ],
+    "microonda": [
+        ("/es/microondas/microondas-libre-instalacion/f-001425-libre/", "microondas-libres"),
+    ],
+    "secadora": [
+        ("/es/lavado-y-secado/secadora-bomba-de-calor/f-000002-secabom/", "secadoras-bomba"),
+        ("/es/lavado-y-secado/lavasecadoras-libre-instalacion/f-000002-0002ls/", "lavasecadoras"),
+    ],
+    "secadoras": [
+        ("/es/lavado-y-secado/secadora-bomba-de-calor/f-000002-secabom/", "secadoras-bomba"),
+    ],
+}
 
-def _build_url(familia_code: str, marca_code: str = "", marca_slug: str = "",
-               palabra: str = "", offset: int = 0) -> str:
-    """
-    Construye la URL de catálogo filtrada de Cemevisa.
-    
-    Patrón base: /es/todo/todo/f-{FAMILIA}-0-{OFFSET}/
-    Filtro texto: se añade _te-{texto}/ 
-    Filtro marca: se añade _ma-{marca_code},{marca_slug}/
-    """
-    base = f"{BASE_URL}/es/todo/todo/f-{familia_code}-0-{offset}/"
-    
-    filters = []
-    if palabra and palabra.strip():
-        palabra_url = palabra.strip().replace(" ", "%20").lower()
-        filters.append(f"_te-{palabra_url}")
-    if marca_code:
-        filters.append(f"_ma-{marca_code},{marca_slug}")
-    
-    if filters:
-        base += "/".join(filters) + "/"
-    
-    return base
+# ── Códigos de marca para filtrado ─────────────────────────────────────────────
+MARCAS = {
+    "balay":      "bsh49",
+    "bosch":      "bshb2",
+    "siemens":    "bshs3",
+    "aeg":        "ge39",
+    "electrolux": "ge08",
+    "cata":       "cna38",
+    "teka":       "tek11",
+    "beko":       "bek01",
+    "hisense":    "his01",
+    "samsung":    "sam01",
+    "lg":         "lg001",
+    "whirlpool":  "whi01",
+    "neff":       "bshn1",
+    "candy":      "can01",
+    "edesa":      "ede01",
+    "smeg":       "sme01",
+}
 
 
 def _parse_precio(precio_raw: str) -> float | None:
@@ -99,19 +136,43 @@ def _parse_precio(precio_raw: str) -> float | None:
 
 
 def _login(session: requests.Session, usuario: str, clave: str) -> bool:
-    """Realiza el login en Cemevisa y devuelve True si fue exitoso."""
+    """Realiza el login en Cemevisa."""
     try:
-        r = session.get(BASE_URL, headers=HEADERS, timeout=20)
-        login_data = {
-            "Tusuario": usuario,
-            "Tclave": clave,
-            "accion": "login",
-        }
-        r = session.post(f"{BASE_URL}/es/usuarios/identificar/",
-                         data=login_data, headers=HEADERS, timeout=20, allow_redirects=True)
-        return "logout" in r.text.lower() or usuario in r.text
+        session.get(BASE_URL, headers=HEADERS, timeout=15)
+        r = session.post(
+            f"{BASE_URL}/es/usuarios/identificar/",
+            data={"Tusuario": usuario, "Tclave": clave, "accion": "login"},
+            headers=HEADERS, timeout=20, allow_redirects=True,
+        )
+        return "logout" in r.text.lower()
     except Exception:
         return False
+
+
+def _build_paginated_url(base_path: str, offset: int, marca_code: str = "", palabra: str = "") -> str:
+    """
+    Construye URL con paginación y filtros de marca/texto.
+    
+    Cemevisa paginación: agrega -OFFSET al final del segmento f-xxx
+    Ejemplo: /es/lavavajillas/.../f-000003-000360/  ->  /es/lavavajillas/.../f-000003-000360-20/
+    Filtro marca: /c------{MARCA_CODE}-----/
+    Filtro texto+marca: /c-{TEXTO}------{MARCA_CODE}---/
+    """
+    if offset == 0:
+        paginated_path = base_path
+    else:
+        # Insertar offset antes del slash final del segmento f-xxx
+        # /es/cat/subcat/f-FAMILIA-SUB/ -> /es/cat/subcat/f-FAMILIA-SUB-OFFSET/
+        paginated_path = re.sub(r'(f-[^/]+)/([^/]*)$', lambda m: f"{m.group(1)}-{offset}/{m.group(2)}", base_path)
+        if paginated_path == base_path:  # fallback si no hay segmento f-
+            paginated_path = base_path.rstrip('/') + f'-{offset}/'
+
+    filters = ""
+    if palabra or marca_code:
+        palabra_url = palabra.strip().replace(" ", "-").lower() if palabra else ""
+        filters = f"/c-{palabra_url}------{marca_code}---/"
+
+    return f"{BASE_URL}{paginated_path}{filters}"
 
 
 def _extract_page_products(html: str) -> list[dict]:
@@ -119,51 +180,41 @@ def _extract_page_products(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     rows = soup.select("tr.bloque")
     products = []
-    
+
     for row in rows:
-        # ── Nombre y enlace ──
         enlace = row.select_one("td.tres-col a.tt")
         titular = row.select_one("td.tres-col a.tt p.titular")
-        
-        if not enlace:
+        precio_el = row.select_one("td.precioneto")
+
+        if not enlace or not precio_el:
             continue
-        
+
         href = enlace.get("href", "")
         if not href.startswith("http"):
             href = BASE_URL + href
-        
+
         nombre = titular.get_text(strip=True) if titular else enlace.get_text(" ", strip=True)
-        
-        # ── Referencia ──
-        ref_match = re.search(r"/p-([^/]+)/", href)
-        referencia = ref_match.group(1) if ref_match else "—"
-        
-        # ── Precio neto ──
-        precio_el = row.select_one("td.precioneto")
-        precio_raw = precio_el.get_text(strip=True) if precio_el else ""
-        
+        precio_raw = precio_el.get_text(strip=True)
+
         if not nombre or not precio_raw:
             continue
-        
-        # ── Imagen ──
+
+        # Referencia
+        ref_match = re.search(r"/p-([^/]+)/", href)
+        referencia = ref_match.group(1) if ref_match else "—"
+
+        # Imagen
         img_el = row.select_one("a.tt div img")
         img_src = ""
         if img_el:
             img_src = img_el.get("src", "") or img_el.get("data-src", "")
             if img_src and not img_src.startswith("http"):
                 img_src = BASE_URL + img_src
-        
-        # ── Descripción / Características rápidas ──
-        # Cemevisa muestra bullets de características debajo del nombre
-        desc_items = row.select("td.tres-col ul li")
+
+        # Descripción / características (bullets ul.punto)
+        desc_items = row.select("ul.punto li")
         descripcion = " · ".join([li.get_text(strip=True) for li in desc_items if li.get_text(strip=True)])
-        
-        # Si no hay bullets, intentar coger el texto pequeño
-        if not descripcion:
-            desc_el = row.select_one("td.tres-col p.subtitular")
-            if desc_el:
-                descripcion = desc_el.get_text(strip=True)
-        
+
         products.append({
             "nombre":      nombre,
             "referencia":  referencia,
@@ -172,7 +223,7 @@ def _extract_page_products(html: str) -> list[dict]:
             "imagen":      img_src,
             "descripcion": descripcion,
         })
-    
+
     return products
 
 
@@ -183,61 +234,64 @@ async def buscar_cemevisa(
     marca: str | None = None,
     palabra: str = "",
     margen: float = 0.40,
-    max_paginas: int = 3,
+    max_paginas: int = 2,
     headless: bool = True,
 ) -> list[dict]:
     """
-    Busca productos en Cemevisa usando requests+BeautifulSoup.
-    Usa los filtros de URL nativos de Cemevisa (_te- para texto, _ma- para marca).
+    Busca productos en Cemevisa usando requests+BeautifulSoup con URLs reales verificadas.
     """
     familia_lower = familia.lower().strip()
-    familia_code = FAMILIAS.get(familia_lower, "")
-    if not familia_code:
-        raise ValueError(f"Familia '{familia}' no reconocida. Opciones: {list(FAMILIAS.keys())}")
+    cat_urls = CATEGORIAS_URL.get(familia_lower)
+
+    if not cat_urls:
+        raise ValueError(f"Familia '{familia}' no reconocida. Opciones: {list(CATEGORIAS_URL.keys())}")
 
     marca_code = ""
-    marca_slug = ""
     if marca:
-        marca_info = MARCAS.get(marca.lower().strip())
-        if marca_info:
-            marca_code, marca_slug = marca_info
+        marca_code = MARCAS.get(marca.lower().strip(), "")
 
     session = requests.Session()
     session.headers.update(HEADERS)
 
     # Login
-    logged_in = _login(session, usuario, clave)
-    if not logged_in:
-        # Intentar una vez más
-        _login(session, usuario, clave)
+    _login(session, usuario, clave)
 
-    # Scraping por páginas
     todos_productos = []
+    seen_refs = set()
 
-    for pagina in range(max_paginas):
-        offset = pagina * 20
-        url = _build_url(familia_code, marca_code, marca_slug, palabra, offset)
+    # Iterar sobre las subcategorías relevantes
+    for base_path, _ in cat_urls:
+        for pagina in range(max_paginas):
+            offset = pagina * 20
+            url = _build_paginated_url(base_path, offset, marca_code, palabra)
 
-        try:
-            r = session.get(url, timeout=25, allow_redirects=True)
-            if r.status_code != 200:
+            try:
+                r = session.get(url, headers=HEADERS, timeout=25, allow_redirects=True)
+                if r.status_code == 404 or "404" in r.url:
+                    break
+                productos_pagina = _extract_page_products(r.text)
+            except Exception:
                 break
-            productos_pagina = _extract_page_products(r.text)
-        except Exception:
-            break
 
-        if not productos_pagina:
-            break
-
-        todos_productos.extend(productos_pagina)
-
-        # Comprobar paginación
-        soup = BeautifulSoup(r.text, "html.parser")
-        pag_text = soup.select_one(".pagination p")
-        if pag_text:
-            match = re.search(r"página (\d+) de (\d+)", pag_text.get_text())
-            if match and int(match.group(1)) >= int(match.group(2)):
+            if not productos_pagina:
                 break
+
+            for p in productos_pagina:
+                if p["referencia"] not in seen_refs:
+                    todos_productos.append(p)
+                    seen_refs.add(p["referencia"])
+
+            # Comprobar paginación
+            soup = BeautifulSoup(r.text, "html.parser")
+            pag_text = soup.select_one(".pagination p")
+            if pag_text:
+                match = re.search(r"página (\d+) de (\d+)", pag_text.get_text())
+                if match and int(match.group(1)) >= int(match.group(2)):
+                    break
+
+        # Límite razonable: con la primera subcategoría que da resultados, basta
+        if len(todos_productos) >= 15:
+            break
 
     # Calcular precios con margen
     resultados = []
@@ -259,10 +313,6 @@ async def buscar_cemevisa(
             "Fuente":       "Cemevisa",
         })
 
-    # Filtro post-search para "horno_compacto"
-    if familia_lower == "horno_compacto":
-        resultados = [r for r in resultados if "45" in r["Nombre"] or "COMPACT" in r["Nombre"].upper()]
-
     return sorted(resultados, key=lambda x: x["Beneficio €"], reverse=True)
 
 
@@ -273,13 +323,15 @@ if __name__ == "__main__":
         resultados = await buscar_cemevisa(
             usuario="13323",
             clave="2h74",
-            familia="hornos",
-            marca="balay",
+            familia="lavavajillas",
+            marca=None,
             palabra="",
             margen=0.40,
-            max_paginas=2,
+            max_paginas=1,
         )
         print(f"\n✅ {len(resultados)} productos encontrados\n")
-        for r in resultados[:10]:
-            print(f"  {r['Referencia']:15} | {r['Nombre'][:45]:45} | {r['Coste €']:.2f}€ | {r['Descripcion'][:50]}")
+        for r in resultados[:8]:
+            print(f"  {r['Referencia']:15} | {r['Nombre'][:45]:45} | {r['Coste €']:.2f}€")
+            if r['Descripcion']:
+                print(f"    📋 {r['Descripcion'][:80]}")
     asyncio.run(main())
