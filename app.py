@@ -7,9 +7,11 @@ import streamlit as st
 import asyncio
 import pandas as pd
 import time
-import nest_asyncio
+import os
+import subprocess
 from datetime import datetime
 import base64
+import nest_asyncio
 
 # Necesario para que asyncio funcione dentro de Streamlit
 nest_asyncio.apply()
@@ -25,6 +27,13 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed", # Más limpio
 )
+
+# ── Instalación de Playwright (solo en Streamlit Cloud) ────────────────────────
+if "STREAMLIT_SERVER_ADDRESS" in os.environ:
+    browser_path = os.path.expanduser("~/.cache/ms-playwright")
+    if not os.path.exists(browser_path):
+        with st.spinner("📦 Configurando motores de búsqueda..."):
+            subprocess.run(["playwright", "install", "chromium"], check=True)
 
 # ── Inicializar Estado de Sesión ────────────────────────────────────────────────
 if "history" not in st.session_state:
