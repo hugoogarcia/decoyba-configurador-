@@ -7,8 +7,6 @@ import streamlit as st
 import asyncio
 import pandas as pd
 import time
-import os
-import subprocess
 from datetime import datetime
 import base64
 import nest_asyncio
@@ -27,18 +25,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed", # Más limpio
 )
-
-# ── Instalación de Playwright (solo en Streamlit Cloud) ────────────────────────
-if "STREAMLIT_SERVER_ADDRESS" in os.environ:
-    browser_path = os.path.expanduser("~/.cache/ms-playwright")
-    # Limpieza proactiva si la carpeta existe pero está vacía o incompleta
-    if not os.path.exists(browser_path) or len(os.listdir(browser_path)) == 0:
-        with st.spinner("📦 Instalando motores de búsqueda (esto solo ocurre una vez)..."):
-            try:
-                subprocess.run(["playwright", "install", "chromium"], check=True)
-            except Exception as e:
-                st.error(f"Error crítico instalando Playwright: {e}")
-                st.stop()
 
 # ── Inicializar Estado de Sesión ────────────────────────────────────────────────
 if "history" not in st.session_state:
