@@ -28,35 +28,35 @@ CATEGORIAS = {
     "frio":           (23440, "23440-frio"),
     "nevera":         (23440, "23440-frio"),
     "frigorifico":    (23440, "23440-frio"),
-    "congelador":     (23440, "23440-frio"),
+    "congelador":     (23280, "23280-congelador-vertical"),
     "campana":        (23400, "23400-campanas"),
     "campanas":       (23400, "23400-campanas"),
     "placas":         (23530, "23530-placas-induccion"),
     "placa":          (23530, "23530-placas-induccion"),
     "horno_compacto": (23760, "23760-horno-independiente-45-cm-alto"),
-    "secadora":       (23485, "23485-secadoras"),
-    "secadoras":      (23485, "23485-secadoras"),
+    "secadora":       (23570, "23570-secadoras"),
+    "secadoras":      (23570, "23570-secadoras"),
 }
 
-# ── Fabricantes conocidos (nombre → trozo de label a buscar en la página) ──────
+# ── Fabricantes conocidos (nombre -> ID en Gocisa) ──────────────────────────
 FABRICANTES = {
-    "aeg":        "AEG",
-    "balay":      "BALAY",
-    "beko":       "BEKO",
-    "bosch":      "BOSCH",
-    "candy":      "CANDY",
-    "cata":       "CATA",
-    "edesa":      "EDESA",
-    "electrolux": "ELECTROLUX",
-    "elica":      "ELICA",
-    "hisense":    "HISENSE",
-    "lg":         "LG",
-    "neff":       "NEFF",
-    "samsung":    "SAMSUNG",
-    "siemens":    "SIEMENS",
-    "smeg":       "SMEG",
-    "teka":       "TEKA",
-    "whirlpool":  "WHIRLPOOL",
+    "aeg":        "2",
+    "balay":      "7",
+    "beko":       "18",
+    "bosch":      "11",
+    "candy":      "19",
+    "cata":       "5",
+    "edesa":      "24",
+    "electrolux": "6",
+    "elica":      "27",
+    "hisense":    "34",
+    "lg":         "22",
+    "neff":       "25",
+    "samsung":    "26",
+    "siemens":    "12",
+    "smeg":       "14",
+    "teka":       "4",
+    "whirlpool":  "8",
 }
 
 BASE_URL = "http://grupo.gocisa.es"
@@ -127,46 +127,24 @@ def _login(session: requests.Session, usuario: str, clave: str) -> bool:
         return False
 
 
-def _extract_filter_ids(soup: BeautifulSoup, brand_label: str | None, capacidad_kg: int | None) -> dict:
+def _extract_filter_ids(soup: BeautifulSoup, brand_id: str | None, capacidad_kg: int | None) -> dict:
     """
     Extrae dinámicamente los IDs de los filtros de la página de categoría.
-    Busca checkboxes de fabricante y capacidad.
-    Devuelve un dict con los params para el AJAX.
+    Prioriza el brand_id si se pasa, si no, busca en el HTML.
     """
     params = {}
     
-    # Buscar fabricante en los checkboxes de la sidebar
-    if brand_label:
-        # Buscar todos los links o checkboxes de fabricante
-        for li in soup.select("div#layered_manufacturer_block_left li, div.layered_manufacturer li"):
-            text = li.get_text(strip=True).upper()
-            if brand_label.upper() in text:
-                a = li.select_one("a")
-                if a:
-                    href = a.get("href", "")
-                    # Extraer el ID del fabricante del onclick o del href
-                    m = re.search(r"layered_manufacturer_(\d+)", href)
-                    if not m:
-                        m = re.search(r"'manufacturer'[^,]*,\s*'?(\d+)", href)
-                    if m:
-                        fab_id = m.group(1)
-                        params[f"layered_manufacturer_{fab_id}"] = fab_id
-                        break
-                # Buscar en el input checkbox
-                checkbox = li.select_one("input[type='checkbox']")
-                if checkbox:
-                    name = checkbox.get("name", "")
-                    value = checkbox.get("value", "")
-                    if name and value:
-                        params[name] = value
-                        break
-
-    # Buscar capacidad en kg
+    # 1. Fabricante
+    if brand_id:
+        params[f"layered_manufacturer_{brand_id}"] = brand_id
+    
+    # 2. Capacidad en kg (buscar en el HTML)
     if capacidad_kg:
         target_label = f"CAPACIDAD {capacidad_kg} KG"
         for li in soup.select("div#layered_id_feature li, div.layered_id_feature_block_left li"):
             text = li.get_text(strip=True).upper()
-            if target_label in text or f"{capacidad_kg} KG" in text:
+            # Búsqueda más flexible para capacidad
+            if target_label in text or f"{capacidad_kg} KG" in text or f"{capacidad_kg}KG" in text:
                 checkbox = li.select_one("input[type='checkbox']")
                 if checkbox:
                     name = checkbox.get("name", "")
@@ -277,9 +255,9 @@ async def buscar_gocisa(
         cat_id, cat_slug = cat_info
 
     marca_low = marca.lower().strip() if marca else None
-    brand_label = FABRICANTES.get(marca_low) if marca_low else None
+    brand_id = FABRICANTES.get(marca_low) if marca_low else None
 
-    # Detectar capacidad en kg de la palabra clave (ej: "7kg", "7 kg")
+    # Detectar capacidad en kg de la palabra clave
     capacidad_kg = None
     if palabra:
         m = re.search(r"(\d+)\s*kg", palabra.lower())
@@ -295,7 +273,7 @@ async def buscar_gocisa(
     todos_productos = []
 
     if cat_id:
-        # ── Cargar la página de categoría para extraer IDs de filtros ──────────
+        # ── Cargar la página de categoría para mayor robustez ──────────
         cat_url = f"{BASE_URL}/es/{cat_slug}"
         try:
             r = session.get(cat_url, headers=HEADERS, timeout=20)
@@ -303,8 +281,8 @@ async def buscar_gocisa(
         except Exception:
             cat_soup = BeautifulSoup("", "html.parser")
 
-        # Extraer IDs dinámicos de filtros
-        filter_params = _extract_filter_ids(cat_soup, brand_label, capacidad_kg)
+        # Extraer IDs de filtros
+        filter_params = _extract_filter_ids(cat_soup, brand_id, capacidad_kg)
 
         # ── Params base del AJAX ──────────────────────────────────────────────
         ajax_base = {
@@ -323,19 +301,23 @@ async def buscar_gocisa(
             texto_filtro = re.sub(r"\d+\s*kg", "", palabra, flags=re.IGNORECASE).strip()
 
         for pagina in range(1, max_paginas + 1):
-            params = {**ajax_base, "p": pagina}
+            params = {**ajax_base, "p": pagina, "ajax": "true"}
             try:
-                r = session.get(
-                    AJAX_URL, params=params,
-                    headers={**HEADERS, "Referer": cat_url},
-                    timeout=25,
-                )
-                # La respuesta puede ser JSON con campo "productList" o HTML directo
-                if r.headers.get("Content-Type", "").startswith("application/json"):
-                    data = r.json()
-                    html_content = data.get("productList", "") or data.get("products", "")
-                else:
-                    html_content = r.text
+                # Gocisa AJAX requiere X-Requested-With
+                headers = {
+                    **HEADERS, 
+                    "Referer": cat_url,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json, text/javascript, */*; q=0.01"
+                }
+                r = session.get(AJAX_URL, params=params, headers=headers, timeout=25)
+                
+                # La respuesta es JSON con campo "productList"
+                data = r.json()
+                html_content = data.get("productList", "") or data.get("products", "")
+                
+                if not html_content and not data:
+                    break
 
                 productos_pagina = _extract_products_from_html(html_content)
             except Exception:

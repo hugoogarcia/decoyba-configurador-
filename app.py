@@ -300,6 +300,15 @@ if buscar and query_input:
 
     with st.spinner("🧠 Analizando mercado y calculando márgenes netos..."):
         params = interpretar(query_input, margen_override=margen_pct / 100)
+    
+    # ── AI Feedback (Transparency) ──
+    with st.expander("📝 Lo que entendió la IA", expanded=True):
+        col_ia1, col_ia2, col_ia3 = st.columns(3)
+        col_ia1.metric("Familia", params["familia"].capitalize())
+        col_ia2.metric("Marca", (params["marca"] or "Cualquiera").upper())
+        col_ia3.metric("Filtros", params.get("palabra") or "Ninguno")
+        if params.get("razonamiento"):
+            st.caption(f"💡 {params['razonamiento']}")
 
     async def fetch_safe(func, *args):
         try: return await func(*args)
@@ -321,6 +330,7 @@ if buscar and query_input:
     
     if not raw_results:
         st.info("No se encontraron coincidencias. Prueba refinando la búsqueda.")
+        st.warning(f"Sugerencia: Prueba con términos más generales para '{params['familia']}'.")
     else:
         # Eliminar duplicados por referencia
         unique = []

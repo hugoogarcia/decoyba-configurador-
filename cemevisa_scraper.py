@@ -154,23 +154,27 @@ def _build_paginated_url(base_path: str, offset: int, marca_code: str = "", pala
     Construye URL con paginación y filtros de marca/texto.
     
     Cemevisa paginación: agrega -OFFSET al final del segmento f-xxx
-    Ejemplo: /es/lavavajillas/.../f-000003-000360/  ->  /es/lavavajillas/.../f-000003-000360-20/
-    Filtro marca: /c------{MARCA_CODE}-----/
-    Filtro texto+marca: /c-{TEXTO}------{MARCA_CODE}---/
+    Filtro marca: /c--1----{SUBFAM_CODE}-{MARCA_CODE}------/
+    Filtro texto: /c-{TEXTO}------{MARCA_CODE}---/ (el texto va al inicio)
     """
-    if offset == 0:
-        paginated_path = base_path
-    else:
-        # Insertar offset antes del slash final del segmento f-xxx
-        # /es/cat/subcat/f-FAMILIA-SUB/ -> /es/cat/subcat/f-FAMILIA-SUB-OFFSET/
-        paginated_path = re.sub(r'(f-[^/]+)/([^/]*)$', lambda m: f"{m.group(1)}-{offset}/{m.group(2)}", base_path)
-        if paginated_path == base_path:  # fallback si no hay segmento f-
-            paginated_path = base_path.rstrip('/') + f'-{offset}/'
+    # Extraer subfamilia del base_path (ej: f-000003-000360/ -> 000360)
+    subfam_match = re.search(r'f-[^-]+-([^-/]+)', base_path)
+    subfam_code = subfam_match.group(1) if subfam_match else ""
 
+    # Paginación: siempre añadir -OFFSET si hay filtros o si offset > 0
+    if offset > 0 or palabra or marca_code:
+        paginated_path = re.sub(r'(f-[^/]+)/([^/]*)$', lambda m: f"{m.group(1)}-{offset}/{m.group(2)}", base_path)
+    else:
+        paginated_path = base_path
+    
     filters = ""
-    if palabra or marca_code:
-        palabra_url = palabra.strip().replace(" ", "-").lower() if palabra else ""
-        filters = f"/c-{palabra_url}------{marca_code}---/"
+    if palabra:
+        # Formato búsqueda texto: /c-{TEXTO}------{MARCA_CODE}---/
+        palabra_url = palabra.strip().replace(" ", "-").lower()
+        filters = f"c-{palabra_url}------{marca_code}---/"
+    elif marca_code:
+        # Formato solo marca: /c--1----{SUBFAM_CODE}-{MARCA_CODE}------/
+        filters = f"c--1----{subfam_code}-{marca_code}------/"
 
     return f"{BASE_URL}{paginated_path}{filters}"
 
