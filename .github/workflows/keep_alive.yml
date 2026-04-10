@@ -1,0 +1,15 @@
+name: Keep Alive Decoyba
+
+on:
+  schedule:
+    # Se ejecuta cada 45 minutos (un poco antes de la hora para asegurar)
+    - cron: '*/45 * * * *'
+  workflow_dispatch: # Permite activarlo manualmente
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        run: |
+          curl -I https://decoyba.streamlit.app

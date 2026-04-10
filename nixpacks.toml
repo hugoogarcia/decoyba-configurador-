@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["...", "python310", "playwright-driver"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt", "playwright install-deps chromium", "playwright install chromium"]
+
+[start]
+cmd = "streamlit run app.py --server.port $PORT --server.address 0.0.0.0"

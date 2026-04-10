@@ -249,6 +249,10 @@ if "search_trigger" in st.session_state:
     query_input = st.session_state.pop("search_trigger")
     buscar = True
 
+@st.cache_data(ttl=3600) # Caché de 1 hora para interpretaciones idénticas
+def get_interpretation(query, margen):
+    return interpretar(query, margen_override=margen)
+
 def filter_and_rank(results, params):
     """Filtrado inteligente v4: elimina accesorios y repuestos, prioriza por contexto."""
     
@@ -299,7 +303,7 @@ if buscar and query_input:
         st.stop()
 
     with st.spinner("🧠 Analizando mercado y calculando márgenes netos..."):
-        params = interpretar(query_input, margen_override=margen_pct / 100)
+        params = get_interpretation(query_input, margen_pct / 100)
     
     # ── AI Feedback (Transparency) ──
     with st.expander("📝 Lo que entendió la IA", expanded=True):
