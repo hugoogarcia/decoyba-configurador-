@@ -293,14 +293,27 @@ if buscar and query_input:
     if not any(h['query'] == query_input for h in st.session_state.history):
         st.session_state.history.append({"query": query_input, "timestamp": time.time()})
 
-    try:
-        creds = {
-            "cem": (st.secrets["CEM_USER"], st.secrets["CEM_PASS"]),
-            "goc": (st.secrets["GOC_USER"], st.secrets["GOC_PASS"])
-        }
-    except:
-        st.error("Error: Configura las credenciales en .streamlit/secrets.toml")
+    # Intentar cargar credenciales desde st.secrets (Cloud) o os.environ (Railway)
+    import os
+    def get_secret(key):
+        try:
+            return st.secrets[key]
+        except:
+            return os.getenv(key)
+
+    cem_user = get_secret("CEM_USER")
+    cem_pass = get_secret("CEM_PASS")
+    goc_user = get_secret("GOC_USER")
+    goc_pass = get_secret("GOC_PASS")
+
+    if not all([cem_user, cem_pass, goc_user, goc_pass]):
+        st.error("⚠️ Error: Faltan credenciales (CEM/GOC). Configura las variables de entorno.")
         st.stop()
+
+    creds = {
+        "cem": (cem_user, cem_pass),
+        "goc": (goc_user, goc_pass)
+    }
 
     with st.spinner("🧠 Analizando mercado y calculando márgenes netos..."):
         params = get_interpretation(query_input, margen_pct / 100)
