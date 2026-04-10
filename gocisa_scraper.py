@@ -71,18 +71,24 @@ HEADERS = {
 
 
 def _parse_precio(precio_raw: str) -> float | None:
-    """Convierte '62,99 €' o '304,89 € IVA incl.' → float sin IVA (precio neto)"""
+    """Convierte '62,99 € antes de IVA' o '304,89 € IVA incl.' → float sin IVA (precio neto)"""
     if not precio_raw:
         return None
     try:
-        # Eliminamos texto IVA
+        # Detectar si el precio ya es neto o lleva IVA
+        es_neto = "antes de" in precio_raw.lower()
+        
+        # Limpieza numérica
         limpio = re.sub(r'IVA.*', '', precio_raw, flags=re.IGNORECASE)
         limpio = limpio.replace("€", "").replace(".", "").replace(",", ".").strip()
         match = re.search(r"(\d+\.\d+|\d+)", limpio)
         if match:
-            precio_con_iva = float(match.group(1))
-            # Los precios de Gocisa llevan IVA incluido (21%) → precio neto
-            return round(precio_con_iva / 1.21, 2)
+            valor = float(match.group(1))
+            if es_neto:
+                return round(valor, 2)
+            else:
+                # Si no especifica "antes de IVA", asumimos que Gocisa incluye IVA (21%)
+                return round(valor / 1.21, 2)
         return None
     except Exception:
         return None
@@ -183,13 +189,24 @@ def _extract_products_from_html(html: str) -> list[dict]:
         # Limpiamos prefijos numéricos tipo "02LAVADORA" → "LAVADORA"
         nombre = re.sub(r"^\d{2}", "", nombre).strip()
 
-        # Precio
-        price_el = (
-            item.select_one(".right-block .price.product-price") or
-            item.select_one("span.price") or
-            item.select_one(".product-price-and-shipping .price")
-        )
-        precio_raw = price_el.get_text(strip=True) if price_el else ""
+        # Precio: Buscamos todos los precios y cogemos el menor (soporte para REBAJAS)
+        prices_els = item.select(".price.product-price, span.price, .product-price-and-shipping .price")
+        price_texts = [p.get_text(" ", strip=True) for p in prices_els if p.get_text(strip=True)]
+        
+        if not price_texts:
+            continue
+        
+        # Estrategia: Parsear todos y quedarnos con el menor coste neto posible
+        costes_posibles = []
+        for t in price_texts:
+            c = _parse_precio(t)
+            if c: costes_posibles.append((c, t))
+        
+        if not costes_posibles:
+            continue
+            
+        # Nos quedamos con el de menor coste neto
+        coste_final, precio_raw = min(costes_posibles, key=lambda x: x[0])
 
         # URL
         href = name_el.get("href", "")
@@ -373,28 +390,32 @@ async def buscar_gocisa(
     resultados = []
     seen = set()
     for p in todos_productos:
-        coste = _parse_precio(p["precio_raw"])
-        if coste is None or coste <= 0:
+        coste = coste_final # Ya parseado arriba
+        if coste <= 0:
             continue
-        key = p["nombre"][:30].lower()
+        key = (p["nombre"][:30] + str(coste)).lower()
         if key in seen:
             continue
         seen.add(key)
 
-        pvp = round(coste / (1 - margen), 2)
+        # NUEVA LÓGICA: Incremento (Markup) sobre coste
+        # PVP = Coste * (1 + Margen)
+        pvp = round(coste * (1 + margen), 2)
+        pvp_iva = round(pvp * 1.21, 2) # IVA 21%
         beneficio = round(pvp - coste, 2)
         ref = _extract_ref(p["nombre"])
 
         resultados.append({
-            "Referencia":  ref,
-            "Nombre":      p["nombre"],
-            "Descripcion": p["descripcion"],
-            "Coste €":     coste,
-            "PVP €":       pvp,
-            "Beneficio €": beneficio,
-            "URL":         p["url"],
-            "Imagen":      p["imagen"],
-            "Fuente":      "Gocisa",
+            "Referencia":   ref,
+            "Nombre":       p["nombre"],
+            "Descripcion":  p["descripcion"],
+            "Coste €":      coste,
+            "PVP €":        pvp,
+            "PVP IVA €":    pvp_iva,
+            "Beneficio €":  beneficio,
+            "URL":          p["url"],
+            "Imagen":       p["imagen"],
+            "Fuente":       "Gocisa",
         })
 
     return sorted(resultados, key=lambda x: x["Beneficio €"], reverse=True)

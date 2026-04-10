@@ -381,8 +381,12 @@ if buscar and query_input:
 <b>{featured['Coste €']:.2f} €</b>
 </div>
 <div style="display:flex; justify-content:space-between; margin-bottom: 0.5rem; font-size: 1.1rem;">
-<span>PVP ({int(params['margen']*100)}% margen):</span>
-<div class="price-main">{featured['PVP €']:.2f} €</div>
+<span>PVP Base (+{int(params['margen']*100)}%):</span>
+<div style="font-weight:700;">{featured['PVP €']:.2f} €</div>
+</div>
+<div style="display:flex; justify-content:space-between; margin-bottom: 0.5rem;">
+<span style="font-size: 1.2rem; font-weight:700;">PVP Final (IVA incl.):</span>
+<div class="price-main">{featured['PVP IVA €']:.2f} €</div>
 </div>
 <hr style="border-top:1px solid var(--border-light); margin: 0.5rem 0;">
 <div style="display:flex; justify-content:space-between; font-size: 1.2rem;">
@@ -414,7 +418,8 @@ if buscar and query_input:
 {desc_card_html}
 <div style="margin-top:auto;">
 <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.2rem;">Coste neto: <b>{item['Coste €']:.2f} €</b></div>
-<div class="price-main" style="font-size:2rem !important;">{item['PVP €']:.2f} €</div>
+<div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.2rem;">PVP Base: <b>{item['PVP €']:.2f} €</b></div>
+<div class="price-main" style="font-size:1.8rem !important; margin: 0.2rem 0;">{item['PVP IVA €']:.2f} € <small style="font-size:0.8rem">IVA inc.</small></div>
 <div class="profit-text" style="font-size: 0.9rem;">Beneficio: +{item['Beneficio €']:.2f} €</div>
 <a href="{item['URL']}" target="_blank" class="btn-supplier" style="padding:0.5rem; font-size:0.9rem;">VER FICHA</a>
 </div>

@@ -303,7 +303,8 @@ async def buscar_cemevisa(
         coste = _parse_precio(p["precio_raw"])
         if coste is None:
             continue
-        pvp = round(coste / (1 - margen), 2)
+        pvp = round(coste * (1 + margen), 2)
+        pvp_iva = round(pvp * 1.21, 2)
         beneficio = round(pvp - coste, 2)
         resultados.append({
             "Referencia":   p["referencia"],
@@ -311,6 +312,7 @@ async def buscar_cemevisa(
             "Descripcion":  p["descripcion"],
             "Coste €":      coste,
             "PVP €":        pvp,
+            "PVP IVA €":    pvp_iva,
             "Beneficio €":  beneficio,
             "URL":          p["url"],
             "Imagen":       p["imagen"],
